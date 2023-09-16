@@ -1,4 +1,4 @@
-# YouTube Video Transcription
+# AudioGrapher - YouTube Video Transcription Library
 
 A utility to download audio from YouTube videos, transcribe them, and save the transcriptions locally.
 
