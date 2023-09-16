@@ -15,12 +15,16 @@ class Config:
         self.TRANSCRIPTION_DIR = 'transcription'
         self.INPUT_FILE = 'video_links.txt'
         self.THREAD_QUEUE_SIZE = 5
+        self.LANGUAGE = 'uk'
+        self.MODEL = 'large'
 
     def update_from_args(self, args):
         self.DOWNLOADS_DIR = args.downloads_dir
         self.TRANSCRIPTION_DIR = args.transcription_dir
-        self.INPUT_FILE = args.input_file
+        self.INPUT_FILE = args.filename
         self.THREAD_QUEUE_SIZE = args.queue_size
+        self.LANGUAGE = args.language
+        self.MODEL = args.model
 
 
 class MyLogger(object):
@@ -63,13 +67,18 @@ def download_audio(link, audio_file_path):
         ydl.download([link])
 
 
-def transcribe_audio(q, model):
+def transcribe_audio(q, model, language):
     while True:
         audio_file_path, transcription_file_path = q.get()
         if audio_file_path == "STOP":
             break
         print(f"Transcribing audio for {os.path.basename(audio_file_path)}...")
-        result = model.transcribe(audio_file_path, language="uk")
+        
+        # we should set language to None to enable autodetection (slow)
+        if language == "auto":
+            language = None
+
+        result = model.transcribe(audio_file_path, language=language)
         with open(transcription_file_path, 'w') as out_file:
             out_file.write(result['text'])
         print(f"Transcription saved to {transcription_file_path}!")
@@ -78,14 +87,18 @@ def transcribe_audio(q, model):
 def main():
     config = Config()
     parser = argparse.ArgumentParser(description='YouTube Video Transcription')
+    parser.add_argument('filename', nargs='?', default=config.INPUT_FILE,
+                    help='Input file containing video links')
     parser.add_argument('--downloads-dir', default=config.DOWNLOADS_DIR,
                         help='Directory for downloaded audio files')
     parser.add_argument('--transcription-dir', default=config.TRANSCRIPTION_DIR,
                         help='Directory for transcription files')
-    parser.add_argument('--input-file', default=config.INPUT_FILE,
-                        help='Input file containing video links')
     parser.add_argument('--queue-size', type=int, default=config.THREAD_QUEUE_SIZE,
                         help='Max size for the threading queue')
+    parser.add_argument('--language', default=config.LANGUAGE,
+                    help='Language for transcription or "auto" for automatic detection')
+    parser.add_argument('--model', default=config.MODEL,
+                        help='Model for transcription. Available: "large", "medium", "small", "base", "tiny"')
 
     args = parser.parse_args()
     config.update_from_args(args)
@@ -101,12 +114,12 @@ def run(config):
     if not os.path.exists(config.TRANSCRIPTION_DIR):
         os.makedirs(config.TRANSCRIPTION_DIR)
 
-    model = whisper.load_model("large")
+    model = whisper.load_model(config.MODEL)
     q = queue.Queue(maxsize=config.THREAD_QUEUE_SIZE)
 
     # Start transcribing thread
     transcribe_thread = threading.Thread(
-        target=transcribe_audio, args=(q, model))
+        target=transcribe_audio, args=(q, model, config.LANGUAGE))
     transcribe_thread.start()
 
     with open(config.INPUT_FILE, 'r') as file:

@@ -23,17 +23,19 @@ $ pip install -r requirements.txt
 2. By default, the script will look for a file named `video_links.txt` in the current directory. However, this can be changed using command line arguments.
 3. Run the script:
 ```bash
-$ python download.py
+$ python download.py [filename]
 ```
 ### Command Line Arguments:
+- `filename`: Input file containing YouTube video links. Default is `video_links.txt`.
 - `--downloads-dir`: Directory for downloaded audio files. Default is `downloads`.
 - `--transcription-dir`: Directory for transcription files. Default is `transcription`.
-- `--input-file`: Input file containing YouTube video links. Default is `video_links.txt`.
 - `--queue-size`: Max size for the threading queue. Default is `5`.
+- `--language`: Language for transcription or set to "auto" for automatic detection (which can be slower). Default is `uk`.
+- `--model`: Model specification for transcription. Options: "large", "medium", "small", "base", "tiny". Default is `large`
 
 Example:
 ```bash
-python download.py --downloads-dir=my_downloads --transcription-dir=my_transcriptions --input-file=my_video_links.txt --queue-size=10
+python download.py my_video_links.txt --downloads-dir=my_downloads --transcription-dir=my_transcriptions --queue-size=10 --language=en --model=medium
 ```
 
 ## Troubleshooting
