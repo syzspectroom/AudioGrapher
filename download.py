@@ -63,22 +63,16 @@ def download_audio(link, audio_file_path):
         ydl.download([link])
 
 
-def transcribe_audio(file_path, model):
-    result = model.transcribe(file_path, language="uk")
-    print(result['text'])
-    return result['text']
-
-
 def transcribe_audio(q, model):
     while True:
-        file_path = q.get()
-        if file_path == "STOP":
+        audio_file_path, transcription_file_path = q.get()
+        if audio_file_path == "STOP":
             break
-        print(f"Transcribing audio for {os.path.basename(file_path)}...")
-        result = model.transcribe(file_path, language="uk")
-        with open(f'{file_path.replace(".mp3", ".txt")}', 'w') as out_file:
+        print(f"Transcribing audio for {os.path.basename(audio_file_path)}...")
+        result = model.transcribe(audio_file_path, language="uk")
+        with open(transcription_file_path, 'w') as out_file:
             out_file.write(result['text'])
-        print(f"Transcription saved to {file_path.replace('.mp3', '.txt')}!")
+        print(f"Transcription saved to {transcription_file_path}!")
 
 
 def main():
@@ -120,26 +114,27 @@ def run(config):
         for link in links:
             link = link.strip()
 
-            audio_file_path, transcription_file = generate_filenames(
+            audio_file_path, transcription_file_path = generate_filenames(
                 link, config)
 
-            if os.path.exists(transcription_file):
+            if os.path.exists(transcription_file_path):
                 print(
-                    f"Transcription for video ID {os.path.basename(transcription_file).replace('.txt', '')} already exists. Skipping...")
+                    f"Transcription for video ID {os.path.basename(transcription_file_path).replace('.txt', '')} already exists. Skipping...")
                 continue
 
             print(f"Downloading audio from {link}...")
             try:
-                if not os.path.exists(transcription_file):
+                if not os.path.exists(audio_file_path):
                     download_audio(link, audio_file_path)
+                else:
                     print(
                         f"MP3 File for video ID {os.path.basename(audio_file_path).replace('.mp3', '')} already exists. Skipping download...")
-                q.put(audio_file_path)
+                q.put((audio_file_path, transcription_file_path))
             except Exception as e:
                 print(f"Error processing {link}. Error: {e}")
 
     # Tell the transcribe thread to stop after processing all items in the queue
-    q.put("STOP")
+    q.put(("STOP", ""))
     transcribe_thread.join()
 
 
