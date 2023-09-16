@@ -7,6 +7,12 @@ import whisper
 import threading
 import queue
 
+from tqdm import tqdm
+from termcolor import colored
+
+
+pbar = None
+print_lock = threading.Lock()
 
 class Config:
     def __init__(self):
@@ -26,7 +32,6 @@ class Config:
         self.LANGUAGE = args.language
         self.MODEL = args.model
 
-
 class MyLogger(object):
     def debug(self, msg):
         pass
@@ -37,11 +42,14 @@ class MyLogger(object):
     def error(self, msg):
         print(msg)
 
-
-def my_hook(d):
-    if d['status'] == 'finished':
-        print('Done downloading, now converting ...')
-
+def print_status(video_id, status, message, color='white'):
+    global pbar
+    msg = colored(f"[{video_id}] {status} ", color) + message
+    if pbar:
+        with print_lock:
+            pbar.write(msg)
+    else:
+        print(msg)
 
 def generate_filenames(link, config):
     video_id = link.split('=')[-1]
@@ -59,7 +67,6 @@ def download_audio(link, audio_file_path):
             'preferredquality': '192',
         }],
         'logger': MyLogger(),
-        'progress_hooks': [my_hook],
         'outtmpl': audio_file_path,  # Directly use the given filename
     }
 
@@ -69,10 +76,12 @@ def download_audio(link, audio_file_path):
 
 def transcribe_audio(q, model, language):
     while True:
-        audio_file_path, transcription_file_path = q.get()
+        audio_file_path, transcription_file_path, pbar = q.get()
         if audio_file_path == "STOP":
             break
-        print(f"Transcribing audio for {os.path.basename(audio_file_path)}...")
+
+        video_id = os.path.basename(audio_file_path).replace('.mp3', '')
+        print_status(video_id, '🎙️  Transcribing', "", 'cyan')
         
         # we should set language to None to enable autodetection (slow)
         if language == "auto":
@@ -81,7 +90,9 @@ def transcribe_audio(q, model, language):
         result = model.transcribe(audio_file_path, language=language)
         with open(transcription_file_path, 'w') as out_file:
             out_file.write(result['text'])
-        print(f"Transcription saved to {transcription_file_path}!")
+        with print_lock:
+            pbar.update(1)
+        print_status(video_id, '✔️  Transcription Saved', f"to {transcription_file_path}", 'green')
 
 
 def main():
@@ -107,6 +118,8 @@ def main():
 
 
 def run(config):
+    global pbar
+
     # Create Directories
     if not os.path.exists(config.DOWNLOADS_DIR):
         os.makedirs(config.DOWNLOADS_DIR)
@@ -124,30 +137,33 @@ def run(config):
 
     with open(config.INPUT_FILE, 'r') as file:
         links = file.readlines()
-        for link in links:
-            link = link.strip()
+        with tqdm(total=len(links), desc="Overall Progress", ncols=100, position=1, leave=True) as pbar:
+            for link in links:
+                link = link.strip()
+                video_id = link.split('=')[-1]
 
-            audio_file_path, transcription_file_path = generate_filenames(
-                link, config)
+                audio_file_path, transcription_file_path = generate_filenames(
+                    link, config)
 
-            if os.path.exists(transcription_file_path):
-                print(
-                    f"Transcription for video ID {os.path.basename(transcription_file_path).replace('.txt', '')} already exists. Skipping...")
-                continue
+                if os.path.exists(transcription_file_path):
+                    with print_lock:
+                        pbar.update(1)
+                    print_status(video_id, '⚠️  Skipped', f"Transcription already exists.", 'yellow')
+                    continue
 
-            print(f"Downloading audio from {link}...")
-            try:
-                if not os.path.exists(audio_file_path):
-                    download_audio(link, audio_file_path)
-                else:
-                    print(
-                        f"MP3 File for video ID {os.path.basename(audio_file_path).replace('.mp3', '')} already exists. Skipping download...")
-                q.put((audio_file_path, transcription_file_path))
-            except Exception as e:
-                print(f"Error processing {link}. Error: {e}")
+                print_status(video_id, '⬇️  Downloading', f"from {link}", 'blue')
+                try:
+                    if not os.path.exists(audio_file_path):
+                        download_audio(link, audio_file_path)
+                    else:
+                        print_status(video_id, '⚠️  Download Skipped', f"MP3 file already exists.", 'yellow')
+                    q.put((audio_file_path, transcription_file_path, pbar))
+                except Exception as e:
+                    print_status(video_id, '❌  Error', f"Processing {link}. Error: {e}", 'red')
+            pbar.close()
 
     # Tell the transcribe thread to stop after processing all items in the queue
-    q.put(("STOP", ""))
+    q.put(("STOP", "", pbar))
     transcribe_thread.join()
 
 
